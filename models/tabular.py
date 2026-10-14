@@ -148,7 +148,9 @@ def _cb_fit(X_tr, y_tr, X_va, y_va, params, task, n_classes, cat_cols, device, s
     params = {"loss_function": loss, **params, "random_seed": seed, "od_type": "Iter", "od_wait": EARLY_STOP,
               "use_best_model": True, "verbose": 0, "allow_writing_files": False,
               "task_type": "GPU" if device == "gpu" else "CPU"}
-    if device != "gpu":
+    if device == "gpu":
+        params.setdefault("gpu_ram_part", 0.6)  # CatBoost reserves 95% of VRAM by default
+    else:
         params["thread_count"] = _threads()
     cls = cb.CatBoostRegressor if task == "regression" else cb.CatBoostClassifier
     model = cls(**params, cat_features=cat_cols or None)

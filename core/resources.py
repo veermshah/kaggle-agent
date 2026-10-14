@@ -135,6 +135,16 @@ class ResourceMonitor(threading.Thread):
         self._stop_event = threading.Event()
         self._proc = psutil.Process()
         self._nv = _nvml()
+        self._baseline_mb = self._device_used_mb()
+
+    def _device_used_mb(self) -> float:
+        if self._nv is None:
+            return 0.0
+        try:
+            return sum(self._nv.nvmlDeviceGetMemoryInfo(self._nv.nvmlDeviceGetHandleByIndex(i)).used / 2**20
+                       for i in range(self._nv.nvmlDeviceGetCount()))
+        except Exception:
+            return 0.0
 
     def _gpu_mb(self) -> float:
         if self._nv is None:
@@ -150,7 +160,11 @@ class ResourceMonitor(threading.Thread):
         except Exception:
             pass
         if total == 0.0:
-            try:  # Windows WDDM often hides per-process usage; fall back to torch's own counter
+            # Windows WDDM hides per-process usage: use device memory growth since this worker started
+            # (an upper bound if other programs allocate VRAM concurrently).
+            total = max(0.0, self._device_used_mb() - self._baseline_mb)
+        if total == 0.0:
+            try:
                 import sys
                 if "torch" in sys.modules:
                     import torch

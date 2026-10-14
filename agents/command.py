@@ -100,4 +100,8 @@ def make_agent(ws, agent_cfg: dict[str, Any] | None = None):
     agent_cfg = agent_cfg or config.get("agent") or {}
     if agent_cfg.get("type") == "command":
         return CompositeAgent(CommandAgent(agent_cfg["command"], agent_cfg.get("timeout", 600)), heuristic)
+    if agent_cfg.get("type") == "anthropic":
+        from agents.anthropic_agent import AnthropicAgent
+        return CompositeAgent(AnthropicAgent(agent_cfg.get("model", "claude-opus-5-5"),
+                                             agent_cfg.get("effort", "high")), heuristic)
     return heuristic
