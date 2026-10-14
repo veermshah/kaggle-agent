@@ -34,8 +34,8 @@ python -m pytest tests    # ~3 minutes, no credentials needed
 install one that matches your driver (e.g. `pip install torch --index-url https://download.pytorch.org/whl/cu128`
 for RTX 50-series). PyTorch is only needed for the vision adapter.
 
-**Kaggle credentials** (never committed): run `kaggle auth login`, or create a token at
-https://www.kaggle.com/settings/api and either set `KAGGLE_API_TOKEN` (in a git-ignored `.env`; see
+**Kaggle credentials** (never committed): run `kaggle auth login`, or click **Generate New Token** under
+"API Tokens (Recommended)" at https://www.kaggle.com/settings/api (not the legacy kaggle.json key) and either set `KAGGLE_API_TOKEN` (in a git-ignored `.env`; see
 `.env.example`) or save it to `%USERPROFILE%\.kaggle\access_token`. You must join each competition and
 accept its rules on kaggle.com yourself. The agent never automates the website.
 
@@ -170,6 +170,20 @@ agent:
   model: claude-opus-5-5
   effort: high
 ```
+
+**Free, local alternative** (Ollama or any OpenAI-compatible server such as LM Studio or llama.cpp):
+
+```yaml
+agent:
+  type: local
+  model: qwen3:8b          # `ollama pull qwen3:8b`
+  think: true
+```
+
+The model is unloaded after each call (`keep_alive: 0`) and is never loaded while a GPU experiment runs
+(`defer_while_gpu_busy`), so it does not compete with training for VRAM. Those rounds fall back to the
+heuristic. A small context is sent so 8B-class models stay accurate. Measured on this machine:
+qwen3:8b with thinking gave 4/4 valid, novel proposals in ~12 s; llama3.1:8b gave 3/4.
 
 LLM proposals are validated like any others, and the heuristic agent fills any gap or covers a failure.
 The `anthropic` agent enables Claude API server-side refusal fallbacks (`fallbacks: "default"`). Calls are
