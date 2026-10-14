@@ -216,7 +216,21 @@ python main.py features auto-approve --state on -c <slug>    # opt-in: approve c
 ```
 
 With auto-approve on, nothing waits for you, but agent-written code then runs on your machine after only a
-static screen (inside a time-limited worker process). It's your call per competition.
+static screen (inside a time-limited worker process). It's your call per competition. To make it the default
+everywhere, set `custom_code: {auto_approve: true}` in the git-ignored `config/local.yaml`.
+
+**Running Python safely.** Sessions cannot run arbitrary Python: that would expose your `.env` tokens, your
+files and the network, and competition data is untrusted text that could steer an agent (prompt injection).
+Instead they get two sandboxed commands. Both screen the code, run it in a separate process with a timeout,
+and strip secret-looking environment variables (and skip `.env`):
+
+- `features test --name X` runs a feature module on the real data and reports new columns, null/constant
+  columns, likely-leakage flags and a quick one-fold score delta versus the base features.
+- `analyze --name X` runs `analysis/X.py` defining `analyze(train, test)` (train includes the target) and
+  returns its JSON-serialisable result, for exploration.
+
+For fully unrestricted Python, run the whole system inside a container or WSL distro that has no
+credentials mounted.
 
 ## Submissions
 

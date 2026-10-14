@@ -414,7 +414,11 @@ def cmd_features(args):
         _tracker().log_event(ws.slug, "custom_code_policy", f"auto_approve={args.state}")
         return config["custom_code"]
     if not args.name:
-        raise UserError("features approve needs --name")
+        raise UserError(f"features {args.action} needs --name")
+    if args.action == "test":
+        import os
+        from experiments.sandbox import run_sandboxed
+        return run_sandboxed(ws, "feature", args.name, human=os.environ.get("KAGGLE_AGENT_ROLE") != "agent")
     if not sys.stdin.isatty() and not args.yes:
         raise UserError("Approving code requires an interactive terminal or --yes after you have reviewed it")
     problems = custom_code.screen(ws, args.name)
@@ -452,6 +456,24 @@ def pd_crosstab(a, b) -> dict:
     import pandas as pd
     tab = pd.crosstab(a, b, normalize="index").round(3)
     return {str(i): {str(c): float(v) for c, v in row.items()} for i, row in tab.iterrows()}
+
+
+@command("analyze")
+def cmd_analyze(args):
+    import os
+    from experiments.sandbox import run_sandboxed
+    return run_sandboxed(_ws(args), "analysis", args.name, timeout=args.timeout,
+                         human=os.environ.get("KAGGLE_AGENT_ROLE") != "agent")
+
+
+@command("sandbox-exec")
+def cmd_sandbox_exec(args):
+    import os
+    from experiments import sandbox
+    if os.environ.get("KAGGLE_AGENT_ROLE") != "sandbox":
+        raise UserError("sandbox-exec is internal; use `features test` or `analyze`")
+    ws = _ws(args)
+    return sandbox.exec_feature_test(ws, args.name) if args.kind == "feature" else sandbox.exec_analysis(ws, args.name)
 
 
 @command("research")
@@ -627,7 +649,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--force", action="store_true")
 
     sp = add("features", "feature recipes and approval of custom feature code")
-    sp.add_argument("action", choices=["list", "approve", "auto-approve"])
+    sp.add_argument("action", choices=["list", "approve", "auto-approve", "test"])
     sp.add_argument("--name")
     sp.add_argument("--state", choices=["on", "off"], help="for auto-approve")
     sp.add_argument("--yes", action="store_true")
@@ -637,6 +659,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--split", choices=["train", "test"], default="train")
     sp.add_argument("--rows", type=int, default=10)
     sp.add_argument("--column", help="value counts / stats for one column")
+
+    sp = add("analyze", "run a screened analysis script (analysis/<name>.py) in a sandbox")
+    sp.add_argument("--name", required=True)
+    sp.add_argument("--timeout", type=float, default=600)
+
+    sp = add("sandbox-exec", "(internal) execute screened code inside the sandbox process")
+    sp.add_argument("--kind", choices=["feature", "analysis"], required=True)
+    sp.add_argument("--name", required=True)
 
     sp = add("research", "autonomous Claude Code research sessions (optionally with the daemon)")
     sp.add_argument("--with-daemon", action="store_true", help="also keep the scheduler daemon running")
@@ -667,7 +697,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 AGENT_FORBIDDEN = {("features", "approve"), ("features", "auto-approve"), ("submit", "approve"), ("rules", "set"),
                    ("autosubmit", None), ("validation", "reset"), ("cleanup", None), ("start", None),
-                   ("research", None)}
+                   ("research", None), ("sandbox-exec", None)}
 
 
 def _agent_forbidden(args) -> bool:

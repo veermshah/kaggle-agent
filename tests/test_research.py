@@ -93,3 +93,40 @@ def test_research_session_with_opt_in_auto_approval(make_comp, tracker, tmp_path
         exp = tracker.get_experiment(exp["id"])
     assert exp["status"] == "queued"
     assert service.execute(exp["id"], tracker)["status"] == "succeeded"  # used the id column too
+
+
+def test_feature_test_and_analysis_sandbox(make_comp, monkeypatch):
+    import pytest
+    from experiments.sandbox import SandboxError, run_sandboxed, sanitized_env
+    ws = make_comp("binary", n_train=600)
+    (ws.custom_features_dir / "ratio.py").write_text(
+        "import pandas as pd\n\ndef transform(df):\n    return pd.DataFrame({'r': df['num_0'] * df['num_2'],"
+        " 'const': 1.0})\n")
+    monkeypatch.setenv("KAGGLE_AGENT_ROLE", "agent")
+    with pytest.raises(SandboxError, match="auto-approve is off"):
+        run_sandboxed(ws, "feature", "ratio")
+    main.run(["exp", "list", "-c", ws.slug])
+    monkeypatch.delenv("KAGGLE_AGENT_ROLE")
+    main.run(["features", "auto-approve", "--state", "on", "-c", ws.slug])
+    monkeypatch.setenv("KAGGLE_AGENT_ROLE", "agent")
+    out = run_sandboxed(ws, "feature", "ratio")
+    assert set(out["new_columns"]) == {"ratio__r", "ratio__const"}
+    assert any("constant" in f for f in out["flags"])
+    assert out["quick_check"]["metric"] == "roc_auc"
+
+    analysis = ws.root / "analysis"
+    analysis.mkdir(exist_ok=True)
+    (analysis / "balance.py").write_text("def analyze(train, test):\n"
+                                         "    return {'rows': len(train), 'rate': float(train['target'].mean())}\n")
+    assert run_sandboxed(ws, "analysis", "balance")["output"]["rows"] == 600
+    (analysis / "evil.py").write_text("import os\n\ndef analyze(train, test):\n    return os.environ\n")
+    with pytest.raises(SandboxError, match="Safety screen"):
+        run_sandboxed(ws, "analysis", "evil")
+    code, out = main.run(["sandbox-exec", "--kind", "analysis", "--name", "balance", "-c", ws.slug])
+    assert code == 1  # agents cannot call the internal executor directly
+
+    monkeypatch.setenv("KAGGLE_API_TOKEN", "secret")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "secret")
+    env = sanitized_env()
+    assert "KAGGLE_API_TOKEN" not in env and "ANTHROPIC_API_KEY" not in env
+    assert env["KAGGLE_AGENT_NO_DOTENV"] == "1"

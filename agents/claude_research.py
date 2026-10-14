@@ -30,8 +30,8 @@ from tracking.db import Tracker, utcnow
 
 log = logging.getLogger("kaggle_agent.research")
 
-DENIED_SUBCOMMANDS = ("features approve", "submit approve", "rules set", "autosubmit", "validation reset",
-                      "cleanup", "start", "stop")
+DENIED_SUBCOMMANDS = ("features approve", "features auto-approve", "submit approve", "rules set", "autosubmit",
+                      "validation reset", "cleanup", "start", "stop", "sandbox-exec", "research")
 
 BRIEF = """You are the autonomous research lead for the Kaggle competition `{slug}` ({title}).
 Goal: maximise the local cross-validation {metric} ({direction}). A scheduler daemon runs queued experiments on
@@ -51,7 +51,12 @@ Procedure for this session:
    `transform(df: pandas.DataFrame) -> pandas.DataFrame`: df is train+test raw columns plus the id column
    `{id_column}` (no target);
    return ONLY new columns, same row count and order. Imports limited to pandas, numpy, math, re, itertools,
-   collections, string. No file, network or process access. Must not use the target.
+   collections, string, functools, statistics. No file, network or process access. Must not use the target.
+   Then run `features test --name <name>`: it executes the module on the real data in a sandbox and reports
+   errors, null/constant columns, leakage flags and a quick one-fold score delta. Fix and re-test until clean.
+   For exploratory analysis you may write `{analysis_dir}/<name>.py` defining `analyze(train, test)` (train
+   includes the target) returning a JSON-serialisable summary, and run it with `analyze --name <name>`.
+   Same import restrictions; you cannot run Python any other way.
 4. Queue experiments that use it, building on the best configuration, e.g.
    --spec '{{"model": "<best model>", "params": {{...best params...}}, "features": ["<recipes>", "custom:<name>"]}}'
    At most 5 experiments per session. Every experiment needs a falsifiable hypothesis.
@@ -84,12 +89,13 @@ def _rel(path: Path) -> str:
 
 def build_brief(ws: Workspace) -> str:
     from experiments.features import RECIPES
+    from experiments.custom_code import auto_approve_enabled
     config = ws.load_config()
-    auto = (config.get("custom_code") or {}).get("auto_approve")
+    auto = auto_approve_enabled(ws)
     return BRIEF.format(
         slug=ws.slug, title=config.get("title", ws.slug), id_column=config.get("id_column"), metric=config["metric"], direction=config["direction"],
         py=_python_cmd(), notes=_rel(notes_path(ws)), features_dir=_rel(ws.custom_features_dir),
-        recipes=", ".join(sorted(RECIPES)),
+        recipes=", ".join(sorted(RECIPES)), analysis_dir=_rel(ws.root / "analysis"),
         approval_note=("Feature modules are auto-approved after a static safety screen once you finish the session; "
                        "their experiments then run automatically." if auto else
                        "Feature modules need the human's approval before their experiments run."))
@@ -112,7 +118,8 @@ def claude_command(ws: Workspace, settings: dict[str, Any]) -> list[str]:
     py = _python_cmd()
     allowed = [f"Bash({py} main.py *)", "Read", "Grep", "Glob",
                f"Write({_rel(ws.custom_features_dir)}/**)", f"Edit({_rel(ws.custom_features_dir)}/**)",
-               f"Write({_rel(notes_path(ws))})", f"Edit({_rel(notes_path(ws))})"]
+               f"Write({_rel(notes_path(ws))})", f"Edit({_rel(notes_path(ws))})",
+               f"Write({_rel(ws.root / 'analysis')}/**)", f"Edit({_rel(ws.root / 'analysis')}/**)"]
     denied = [f"Bash({py} main.py {sub}*)" for sub in DENIED_SUBCOMMANDS]
     cmd = [exe, "-p", build_brief(ws), "--permission-mode", "dontAsk", "--output-format", "json",
            "--no-session-persistence", "--allowedTools", *allowed, "--disallowedTools", *denied]
@@ -126,8 +133,7 @@ def claude_command(ws: Workspace, settings: dict[str, Any]) -> list[str]:
 def auto_approve_new_code(ws: Workspace, tracker: Tracker) -> list[dict[str, Any]]:
     """Opt-in: approve agent-written modules that pass the safety screen, then re-queue their experiments."""
     from experiments import custom_code
-    config = ws.load_config()
-    if not (config.get("custom_code") or {}).get("auto_approve"):
+    if not custom_code.auto_approve_enabled(ws):
         return []
     results = []
     for mod in custom_code.list_custom(ws):

@@ -35,6 +35,9 @@ loop:
   stop_after_no_improvement: 25   # finished experiments without a new best before the loop stops
   proposals_per_round: 3
 
+custom_code:
+  auto_approve: false             # approve agent-written code that passes the static screen (per competition too)
+
 submissions:
   require_approval: true
   default_daily_budget: 2

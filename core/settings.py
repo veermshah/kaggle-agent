@@ -31,7 +31,7 @@ def _resolve(path: str | Path) -> Path:
 def load_dotenv(path: Path | None = None) -> None:
     """Minimal .env support: KEY=VALUE lines; real environment variables take precedence."""
     path = path or PROJECT_ROOT / ".env"
-    if not path.exists():
+    if os.environ.get("KAGGLE_AGENT_NO_DOTENV") or not path.exists():
         return
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -46,7 +46,7 @@ def load_dotenv(path: Path | None = None) -> None:
 def load_settings() -> dict[str, Any]:
     settings = yaml.safe_load((CONFIG_DIR / "defaults.yaml").read_text()) or {}
     local = CONFIG_DIR / "local.yaml"
-    if local.exists():
+    if local.exists() and not os.environ.get("KAGGLE_AGENT_IGNORE_LOCAL_CONFIG"):
         settings = deep_merge(settings, yaml.safe_load(local.read_text()) or {})
     # KAGGLE_AGENT_HOME relocates workspaces + database (used by tests and remote setups).
     home = os.environ.get("KAGGLE_AGENT_HOME")

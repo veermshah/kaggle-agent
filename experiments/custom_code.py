@@ -66,10 +66,13 @@ FORBIDDEN_ATTRS = {"read_csv", "read_parquet", "read_pickle", "read_json", "read
 
 
 def screen(ws: Workspace, name: str) -> list[str]:
-    """Static safety screen for agent-written feature code. Defence in depth: code also runs only inside the
-    time-limited worker subprocess. Not a sandbox; it rejects the obvious ways to touch files, network,
-    processes or dynamic code."""
-    path = _path(ws, name)
+    return screen_path(_path(ws, name), "transform")
+
+
+def screen_path(path, entry: str = "transform") -> list[str]:
+    """Static safety screen for agent-written code. Defence in depth: code also only ever runs in a separate,
+    time-limited process without secrets in its environment. Not a sandbox; it rejects the obvious ways to
+    touch files, network, processes or dynamic code."""
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"))
     except SyntaxError as exc:
@@ -87,9 +90,18 @@ def screen(ws: Workspace, name: str) -> list[str]:
             problems.append(f"use of {node.id!r} not allowed")
         if isinstance(node, ast.Attribute) and (node.attr in FORBIDDEN_ATTRS or node.attr.startswith("__")):
             problems.append(f"attribute {node.attr!r} not allowed")
-    if not any(isinstance(n, ast.FunctionDef) and n.name == "transform" for n in tree.body):
-        problems.append("no top-level transform(df) function")
+    if not any(isinstance(n, ast.FunctionDef) and n.name == entry for n in tree.body):
+        problems.append(f"no top-level {entry}() function")
     return sorted(set(problems))
+
+
+def auto_approve_enabled(ws: Workspace) -> bool:
+    """Competition setting `custom_code.auto_approve`, else the global default in config/*.yaml."""
+    from core.settings import load_settings
+    local = (ws.load_config().get("custom_code") or {}).get("auto_approve")
+    if local is not None:
+        return bool(local)
+    return bool((load_settings().get("custom_code") or {}).get("auto_approve", False))
 
 
 def approve(ws: Workspace, name: str) -> dict[str, Any]:

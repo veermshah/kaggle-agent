@@ -18,6 +18,7 @@ from tracking.db import Tracker  # noqa: E402
 def home(tmp_path, monkeypatch):
     """Isolated workspaces + database; GPU probing disabled so tests are hardware-independent."""
     monkeypatch.setenv("KAGGLE_AGENT_HOME", str(tmp_path))
+    monkeypatch.setenv("KAGGLE_AGENT_IGNORE_LOCAL_CONFIG", "1")  # tests use defaults only
     reset_settings_cache()
     root = tmp_path / "workspaces"
     root.mkdir()
