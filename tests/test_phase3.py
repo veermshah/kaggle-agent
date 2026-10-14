@@ -111,3 +111,41 @@ def test_dashboard_renders(make_comp, tracker, monkeypatch):
     at.run()
     assert not at.exception
     assert any("Best CV" in m.label for m in at.metric)
+
+
+def test_local_agent_against_fake_ollama(make_comp, tracker):
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from agents.command import CompositeAgent
+    from agents.heuristic import HeuristicAgent
+    from agents.local_agent import LocalLLMAgent
+    seen = {}
+
+    class FakeOllama(BaseHTTPRequestHandler):
+        def do_POST(self):
+            seen.update(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+            content = json.dumps({"proposals": [{"spec": {"model": "lgbm", "params": {"num_leaves": 63}},
+                                                 "hypothesis": "more leaves capture interactions", "arm": "leaves"}]})
+            body = json.dumps({"message": {"content": content}}).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), FakeOllama)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        ws = make_comp("binary")
+        agent = LocalLLMAgent(model="qwen3:8b", base_url=f"http://127.0.0.1:{server.server_address[1]}")
+        props = agent.propose(build_context(ws, tracker), 3)
+        assert props[0].spec["params"] == {"num_leaves": 63} and props[0].arm == "local-qwen3:leaves"
+        assert seen["keep_alive"] == 0 and seen["format"] == "json"
+        # While a GPU experiment runs, the local model is not loaded at all.
+        seen.clear()
+        combo = CompositeAgent(agent, HeuristicAgent())
+        assert combo.propose(build_context(ws, tracker), 2, gpu_busy=True)
+        assert not seen
+    finally:
+        server.shutdown()

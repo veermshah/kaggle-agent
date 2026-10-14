@@ -198,7 +198,10 @@ class Scheduler:
             return 0
         n = int(self.loop.get("proposals_per_round", 3))
         queued = 0
-        for prop in self.agent.propose(ctx, n):
+        gpu_busy = any(r.resource == "gpu" for r in self.running.values())
+        proposals = (self.agent.propose(ctx, n, gpu_busy=gpu_busy) if hasattr(self.agent, "fallback")
+                     else self.agent.propose(ctx, n))
+        for prop in proposals:
             try:
                 out = queue_experiment(self.ws, self.tracker, prop.spec, prop.hypothesis, arm=prop.arm,
                                        proposed_by=self.agent.name, priority=prop.priority, parent_id=prop.parent_id)
