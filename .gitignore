@@ -1,0 +1,32 @@
+# Environments and caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Credentials: never commit
+.env
+kaggle.json
+access_token
+config/local.yaml
+
+# Competition data, models, predictions, databases
+workspaces/*
+!workspaces/.gitkeep
+*.db
+*.db-wal
+*.db-shm
+*.parquet
+*.joblib
+*.npy
+*.npz
+*.zip
+*.csv
+!tests/fixtures/*.csv
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+catboost_info/

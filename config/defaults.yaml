@@ -1,0 +1,41 @@
+# Global defaults. Per-competition overrides live in workspaces/<slug>/competition.yaml.
+
+paths:
+  workspaces: workspaces          # relative to project root unless absolute
+  database: workspaces/kaggle_agent.db
+
+validation:
+  n_splits: 5
+  seed: 42
+  # Fraction of train rows reserved as a final holdout that experiment selection never sees.
+  holdout_fraction: 0.1
+  holdout_min_rows: 2000          # below this many train rows, no holdout is carved out
+
+resources:
+  use_gpu: auto                   # auto | true | false
+  gpu_slots: 1                    # concurrent GPU-heavy experiments
+  cpu_slots: 1                    # concurrent CPU experiments alongside the GPU one
+  max_experiment_seconds: 7200
+  min_free_disk_gb: 20
+  gpu_min_rows: 50000             # below this, GPU boosting rarely beats CPU
+
+loop:
+  max_hours: 24
+  max_experiments: 200
+  max_attempts: 2                 # retries per experiment after crash/timeout
+  poll_seconds: 5
+  min_improvement: 0.0002         # absolute metric change that counts as a real improvement
+  arm_patience: 3                 # non-improving experiments before an approach is parked
+  exploration_weight: 1.0         # UCB exploration constant
+  tune_trials: 40
+  tune_seconds: 1800
+  ensemble_every: 6               # propose an ensemble after this many new successes
+  keep_top_models: 10             # model binaries kept for top-N; predictions are always kept
+  exploration_budget: 0.35        # max share of max_experiments spent on revisit/retry arms
+  stop_after_no_improvement: 25   # finished experiments without a new best before the loop stops
+  proposals_per_round: 3
+
+submissions:
+  require_approval: true
+  default_daily_budget: 2
+  duplicate_correlation: 0.9995   # predictions this similar to a past submission are refused
