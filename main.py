@@ -405,11 +405,61 @@ def cmd_features(args):
     ws = _ws(args)
     if args.action == "list":
         return {"recipes": RECIPES, "custom": custom_code.list_custom(ws)}
+    if args.action == "auto-approve":
+        if args.state not in ("on", "off"):
+            raise UserError("features auto-approve needs --state on|off")
+        config = ws.load_config()
+        config["custom_code"] = {**(config.get("custom_code") or {}), "auto_approve": args.state == "on"}
+        ws.save_config(config)
+        _tracker().log_event(ws.slug, "custom_code_policy", f"auto_approve={args.state}")
+        return config["custom_code"]
     if not args.name:
         raise UserError("features approve needs --name")
     if not sys.stdin.isatty() and not args.yes:
         raise UserError("Approving code requires an interactive terminal or --yes after you have reviewed it")
+    problems = custom_code.screen(ws, args.name)
+    if problems and not args.force:
+        raise UserError(f"Safety screen flagged custom:{args.name}: {problems}. Review it; --force approves anyway.")
     return custom_code.approve(ws, args.name)
+
+
+@command("data")
+def cmd_data(args):
+    from competitions.profiler import read_table
+    ws = _ws(args)
+    config = ws.load_config()
+    df = read_table(ws.data_dir / config["data"]["train_file" if args.split == "train" else "test_file"])
+    if args.column:
+        if args.column not in df.columns:
+            raise UserError(f"No column {args.column!r}. Columns: {list(df.columns)}")
+        s = df[args.column]
+        out = {"dtype": str(s.dtype), "missing": int(s.isna().sum()), "nunique": int(s.nunique())}
+        out["top_values"] = {str(k): int(v) for k, v in s.value_counts(dropna=False).head(25).items()}
+        if s.dtype.kind in "if":
+            out["describe"] = {k: float(v) for k, v in s.describe().items()}
+        target = config["target"]
+        if args.split == "train" and target in df.columns and args.column != target:
+            top = s.astype(str).value_counts().head(15).index
+            sub = df[s.astype(str).isin(top)]
+            rates = pd_crosstab(sub[args.column].astype(str), sub[target])
+            out["target_distribution_by_value"] = rates
+        return out
+    return {"shape": list(df.shape), "columns": list(df.columns),
+            "rows": json.loads(df.head(args.rows).to_json(orient="records"))}
+
+
+def pd_crosstab(a, b) -> dict:
+    import pandas as pd
+    tab = pd.crosstab(a, b, normalize="index").round(3)
+    return {str(i): {str(c): float(v) for c, v in row.items()} for i, row in tab.iterrows()}
+
+
+@command("research")
+def cmd_research(args):
+    from agents.claude_research import supervise
+    ws, tracker = _ws(args), _tracker()
+    return supervise(ws, tracker, with_daemon=args.with_daemon, max_sessions=args.max_sessions,
+                     every_minutes=args.every_minutes, once=args.once)
 
 
 # Reporting & maintenance
@@ -577,9 +627,22 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--force", action="store_true")
 
     sp = add("features", "feature recipes and approval of custom feature code")
-    sp.add_argument("action", choices=["list", "approve"])
+    sp.add_argument("action", choices=["list", "approve", "auto-approve"])
     sp.add_argument("--name")
+    sp.add_argument("--state", choices=["on", "off"], help="for auto-approve")
     sp.add_argument("--yes", action="store_true")
+    sp.add_argument("--force", action="store_true", help="approve despite safety-screen findings")
+
+    sp = add("data", "read-only peek at the competition data")
+    sp.add_argument("--split", choices=["train", "test"], default="train")
+    sp.add_argument("--rows", type=int, default=10)
+    sp.add_argument("--column", help="value counts / stats for one column")
+
+    sp = add("research", "autonomous Claude Code research sessions (optionally with the daemon)")
+    sp.add_argument("--with-daemon", action="store_true", help="also keep the scheduler daemon running")
+    sp.add_argument("--max-sessions", type=int)
+    sp.add_argument("--every-minutes", type=float)
+    sp.add_argument("--once", action="store_true", help="run a single session now and exit")
 
     sp = add("report", "write a Markdown research summary")
     sp.add_argument("--out")
@@ -602,11 +665,28 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+AGENT_FORBIDDEN = {("features", "approve"), ("features", "auto-approve"), ("submit", "approve"), ("rules", "set"),
+                   ("autosubmit", None), ("validation", "reset"), ("cleanup", None), ("start", None),
+                   ("research", None)}
+
+
+def _agent_forbidden(args) -> bool:
+    """Research agents (KAGGLE_AGENT_ROLE=agent) may not approve, change rules/validation or delete."""
+    import os
+    if os.environ.get("KAGGLE_AGENT_ROLE") != "agent":
+        return False
+    action = getattr(args, "action", None)
+    return (args.cmd, None) in AGENT_FORBIDDEN or (args.cmd, action) in AGENT_FORBIDDEN
+
+
 def run(argv: list[str] | None = None) -> tuple[int, dict]:
     from core.settings import load_dotenv
     load_dotenv()
     args = build_parser().parse_args(argv)
-    logging.basicConfig(level=logging.INFO if args.verbose or args.cmd in ("worker", "loop", "resume", "baseline")
+    if _agent_forbidden(args):
+        return 1, {"ok": False, "command": args.cmd,
+                   "error": "This command is reserved for the human operator and is refused for research agents."}
+    logging.basicConfig(level=logging.INFO if args.verbose or args.cmd in ("worker", "loop", "resume", "baseline", "research")
                         else logging.WARNING, stream=sys.stderr,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     try:

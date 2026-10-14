@@ -42,7 +42,7 @@ def list_custom(ws: Workspace) -> list[dict[str, Any]]:
     for p in sorted(ws.custom_features_dir.glob("*.py")):
         sha = _sha(p)
         out.append({"name": p.stem, "sha256": sha, "approved": reg.get(p.stem) == sha,
-                    "requires": declared_requirements(ws, p.stem)})
+                    "requires": declared_requirements(ws, p.stem), "screen_problems": screen(ws, p.stem)})
     return out
 
 
@@ -56,6 +56,40 @@ def declared_requirements(ws: Workspace, name: str) -> list[str]:
             except ValueError:
                 raise CustomCodeError(f"{name}.py: REQUIRES must be a literal list of strings") from None
     return []
+
+
+ALLOWED_IMPORTS = {"pandas", "numpy", "math", "re", "itertools", "collections", "string", "functools", "statistics"}
+FORBIDDEN_NAMES = {"open", "exec", "eval", "compile", "__import__", "input", "breakpoint", "globals", "locals",
+                   "getattr", "setattr", "delattr", "vars"}
+FORBIDDEN_ATTRS = {"read_csv", "read_parquet", "read_pickle", "read_json", "read_excel", "read_sql", "to_csv",
+                   "to_parquet", "to_pickle", "to_json", "to_sql", "system", "popen", "remove", "unlink", "rmtree"}
+
+
+def screen(ws: Workspace, name: str) -> list[str]:
+    """Static safety screen for agent-written feature code. Defence in depth: code also runs only inside the
+    time-limited worker subprocess. Not a sandbox; it rejects the obvious ways to touch files, network,
+    processes or dynamic code."""
+    path = _path(ws, name)
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except SyntaxError as exc:
+        return [f"syntax error: {exc}"]
+    problems = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            mods = [a.name.split(".")[0] for a in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            mods = [(node.module or "").split(".")[0]]
+        else:
+            mods = []
+        problems += [f"import of {m!r} not allowed" for m in mods if m not in ALLOWED_IMPORTS]
+        if isinstance(node, ast.Name) and node.id in FORBIDDEN_NAMES:
+            problems.append(f"use of {node.id!r} not allowed")
+        if isinstance(node, ast.Attribute) and (node.attr in FORBIDDEN_ATTRS or node.attr.startswith("__")):
+            problems.append(f"attribute {node.attr!r} not allowed")
+    if not any(isinstance(n, ast.FunctionDef) and n.name == "transform" for n in tree.body):
+        problems.append("no top-level transform(df) function")
+    return sorted(set(problems))
 
 
 def approve(ws: Workspace, name: str) -> dict[str, Any]:

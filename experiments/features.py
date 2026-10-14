@@ -124,7 +124,10 @@ def build_features(data: TabularData, recipes: list[str], params: dict[str, Any]
         if r.startswith("custom:"):
             if custom_loader is None:
                 raise ValueError(f"Recipe {r} needs a custom feature loader")
-            extra = custom_loader(r.split(":", 1)[1])(df.copy())
+            custom_df = df.copy()
+            if data.id_column and data.train_ids is not None and data.test_ids is not None:
+                custom_df.insert(0, data.id_column, pd.concat([data.train_ids, data.test_ids], ignore_index=True))
+            extra = custom_loader(r.split(":", 1)[1])(custom_df)
             if len(extra) != len(df):
                 raise ValueError(f"Custom feature {r} returned {len(extra)} rows, expected {len(df)}")
             for c in extra.columns:

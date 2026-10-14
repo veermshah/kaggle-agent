@@ -20,6 +20,8 @@ class TabularData:
     classes: list[Any] | None
     task_type: str
     column_types: dict[str, list[str]]
+    train_ids: pd.Series | None = None
+    id_column: str | None = None
 
     @property
     def n_classes(self) -> int:
@@ -67,6 +69,8 @@ def load_tabular(ws: Workspace, config: dict[str, Any]) -> TabularData:
         classes=classes,
         task_type=task,
         column_types=ctypes,
+        train_ids=train[id_col].reset_index(drop=True) if id_col and id_col in train.columns else None,
+        id_column=id_col,
     )
 
 

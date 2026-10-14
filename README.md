@@ -189,6 +189,35 @@ LLM proposals are validated like any others, and the heuristic agent fills any g
 The `anthropic` agent enables Claude API server-side refusal fallbacks (`fallbacks: "default"`). Calls are
 billed to your Anthropic account.
 
+## Autonomous Claude Code research loop
+
+```powershell
+python main.py research -c <slug> --with-daemon      # runs for days; Ctrl+C or create workspaces/<slug>/STOP_RESEARCH
+python main.py research -c <slug> --once             # a single session now
+```
+
+The daemon keeps the GPU busy without any LLM. About every 45 minutes, once at least 3 new results exist
+(set `research: {every_minutes, min_new_results, session_timeout, max_sessions, model}` in competition.yaml),
+a fresh headless `claude -p` session starts. It reads the report and its own `research_notes.md`, studies the
+data (`main.py data --column X`), writes feature modules into `custom_features/`, queues experiments with
+hypotheses, and updates the notes for the next session. Fresh context each session, with memory in SQLite plus
+the notes file, so it can run for days. It uses your Claude Code plan; each session's transcript summary and
+reported cost are saved in `workspaces/<slug>/logs/research/`.
+
+Sandbox: `--permission-mode dontAsk` with an allow-list (main.py commands, read-only tools, and writes only to
+`custom_features/` and the notes file). With `KAGGLE_AGENT_ROLE=agent`, main.py refuses approvals, rule and
+validation changes, autosubmit, and cleanup. New feature code is screened statically (pandas/numpy-style
+imports only; no file, network, process or `eval`/`exec` access) and runs only after approval:
+
+```powershell
+python main.py features list -c <slug>                       # shows approval state + screen findings
+python main.py features approve --name cabin_group -c <slug> # after reading the file
+python main.py features auto-approve --state on -c <slug>    # opt-in: approve code that passes the screen
+```
+
+With auto-approve on, nothing waits for you, but agent-written code then runs on your machine after only a
+static screen (inside a time-limited worker process). It's your call per competition.
+
 ## Submissions
 
 - Files are built from test predictions in the exact sample-submission layout: column names and order,
