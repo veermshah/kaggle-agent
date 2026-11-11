@@ -19,7 +19,13 @@ training adapter; NLP is a planned adapter.
                          experiments · submissions · events      oof / test / holdout predictions
 ```
 
-## Setup (Windows PowerShell)
+## Setup
+
+Python 3.12+ on Windows, macOS or Linux. Tabular training runs on CPU everywhere; XGBoost and CatBoost
+also use an NVIDIA GPU when one is present (Windows or Linux with CUDA). The test suite needs no
+credentials and no GPU.
+
+### Windows (PowerShell)
 
 ```powershell
 cd C:\Users\<you>\cs\kaggle-agent
@@ -34,9 +40,26 @@ python -m pytest tests    # ~3 minutes, no credentials needed
 install one that matches your driver (e.g. `pip install torch --index-url https://download.pytorch.org/whl/cu128`
 for RTX 50-series). PyTorch is only needed for the vision adapter.
 
+### macOS and Linux
+
+```sh
+cd ~/kaggle-agent
+brew install libomp                      # macOS only: OpenMP runtime for LightGBM and XGBoost
+python3 -m venv .venv                    # Linux with a CUDA PyTorch install: add --system-site-packages
+source .venv/bin/activate
+pip install -r requirements.txt
+python main.py gpu                       # reports which libraries can use a GPU (none on macOS)
+python -m pytest tests                   # ~8 minutes on an Apple M5 Pro, no credentials needed
+```
+
+On Linux, `libgomp` (usually already installed with GCC) covers OpenMP. Apple Silicon has no CUDA, so
+`main.py gpu` reports no GPU capabilities and every family trains on CPU; the vision adapter is CUDA-only.
+The commands in the rest of this README are written for PowerShell; on macOS and Linux use `/` in paths
+(e.g. `data/mock-binary`).
+
 **Kaggle credentials** (never committed): run `kaggle auth login`, or click **Generate New Token** under
 "API Tokens (Recommended)" at https://www.kaggle.com/settings/api (not the legacy kaggle.json key) and either set `KAGGLE_API_TOKEN` (in a git-ignored `.env`; see
-`.env.example`) or save it to `%USERPROFILE%\.kaggle\access_token`. You must join each competition and
+`.env.example`) or save it to `%USERPROFILE%\.kaggle\access_token` (`~/.kaggle/access_token` on macOS and Linux). You must join each competition and
 accept its rules on kaggle.com yourself. The agent never automates the website.
 
 ## Quick start
