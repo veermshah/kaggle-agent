@@ -357,11 +357,29 @@ def cmd_promote(args):
 
 # Submissions
 
-def _confirm_interactively(sub: dict) -> None:
-    """Human approval gate. Requires a real terminal so automated agents cannot self-approve."""
+def _in_claude_cloud_session() -> bool:
+    import os
+    return os.environ.get("CLAUDE_CODE_REMOTE") == "true"
+
+
+def _confirm_interactively(sub: dict, user_confirmed: bool = False) -> None:
+    """Human approval gate. Requires a real terminal so automated agents cannot self-approve.
+
+    A Claude Code cloud session has no terminal for the human, so there approval goes through the chat instead:
+    `--user-confirmed` is accepted only when CLAUDE_CODE_REMOTE=true, and the repo's .claude/settings.json makes
+    Claude Code ask the human before it can run `submit approve` at all (see CLAUDE.md).
+    """
+    if user_confirmed:
+        if not _in_claude_cloud_session():
+            raise UserError("--user-confirmed is only accepted inside a Claude Code cloud session; "
+                            "run `submit approve` in a terminal instead.")
+        print(f"Submitting {sub['file_path']} (CV {sub['cv_score']}) on the user's confirmation in chat.",
+              file=sys.stderr)
+        return
     if not sys.stdin.isatty():
         raise UserError("Submission approval requires an interactive terminal (a human). Run this command "
-                        "yourself in PowerShell, or approve from the dashboard.")
+                        "yourself in a terminal, or approve from the dashboard. In a Claude Code cloud session, "
+                        "approve in the chat (see CLAUDE.md).")
     print(f"About to submit {sub['file_path']} (CV {sub['cv_score']}) to Kaggle.", file=sys.stderr)
     answer = input(f"Type the submission id ({sub['id']}) to confirm: ").strip()
     if answer != str(sub["id"]):
@@ -389,7 +407,7 @@ def cmd_submit(args):
         sub = tracker.get_submission(args.id)
         if not sub:
             raise UserError(f"Submission {args.id} not found")
-        _confirm_interactively(sub)
+        _confirm_interactively(sub, user_confirmed=args.user_confirmed)
         return mgr.approve(args.id, approver="user")
     if args.action == "reject":
         return mgr.reject(args.id, args.message or "")
@@ -647,6 +665,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--id", type=int)
     sp.add_argument("--message")
     sp.add_argument("--force", action="store_true")
+    sp.add_argument("--user-confirmed", action="store_true",
+                    help="cloud sessions only: the human approved this submission in the chat")
 
     sp = add("features", "feature recipes and approval of custom feature code")
     sp.add_argument("action", choices=["list", "approve", "auto-approve", "test"])

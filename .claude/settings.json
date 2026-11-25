@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/cloud-setup.sh",
+            "timeout": 900
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "ask": [
+      "Bash(python main.py submit approve:*)",
+      "Bash(python3 main.py submit approve:*)",
+      "Bash(python main.py autosubmit:*)",
+      "Bash(python3 main.py autosubmit:*)",
+      "Bash(python main.py rules set:*)",
+      "Bash(python3 main.py rules set:*)",
+      "Bash(python main.py features approve:*)",
+      "Bash(python3 main.py features approve:*)",
+      "Bash(python main.py features auto-approve:*)",
+      "Bash(python3 main.py features auto-approve:*)",
+      "Bash(python main.py validation reset:*)",
+      "Bash(python3 main.py validation reset:*)",
+      "Bash(python main.py cleanup:*)",
+      "Bash(python3 main.py cleanup:*)",
+      "Bash(kaggle competitions submit:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(~/.kaggle/**)"
+    ]
+  }
+}

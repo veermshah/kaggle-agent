@@ -62,6 +62,41 @@ The commands in the rest of this README are written for PowerShell; on macOS and
 `.env.example`) or save it to `%USERPROFILE%\.kaggle\access_token` (`~/.kaggle/access_token` on macOS and Linux). You must join each competition and
 accept its rules on kaggle.com yourself. The agent never automates the website.
 
+## Cloud sessions (Claude Code on claude.ai/code)
+
+The agent can run inside a Claude Code cloud session, with Claude itself as the research agent. `CLAUDE.md` is
+the runbook Claude follows; `.claude/settings.json` runs `scripts/cloud-setup.sh` at session start (CPU venv at
+`~/.venvs/kaggle-agent` from `requirements-cloud.txt`, cloud-sized `config/local.yaml`) and makes Claude Code
+ask you before any submission, autosubmit, rule decision, code approval, validation reset or cleanup.
+
+One-time setup, in the cloud environment's settings on claude.ai/code:
+
+1. **Network access: Custom**, with these allowed domains, and tick *Also include default list of common
+   package managers* (the setup script needs PyPI):
+   ```
+   kaggle.com
+   *.kaggle.com
+   storage.googleapis.com
+   ```
+   `storage.googleapis.com` serves the competition file downloads.
+2. **Environment variables**: `KAGGLE_API_TOKEN=<token from kaggle.com/settings/api>`. Anyone who can use the
+   environment can read its variables, so keep the environment personal. `KAGGLE_USERNAME` + `KAGGLE_KEY`
+   (legacy kaggle.json values) also work.
+3. Optional, for faster session starts: set the environment's **setup script** to the line below. The
+   environment snapshot then keeps the venv, and the SessionStart hook finds it already built.
+   ```sh
+   python3 -m venv ~/.venvs/kaggle-agent && ~/.venvs/kaggle-agent/bin/pip install -q numpy pandas scipy scikit-learn pyarrow pyyaml joblib psutil lightgbm xgboost catboost optuna kaggle pytest
+   ```
+
+Then open a session on this repo and ask, for example: *"Run the kaggle agent on playground-series-s5e10 for
+3 hours."* Join the competition and accept its rules on kaggle.com first. Claude onboards it, runs baselines,
+keeps the experiment queue full while the daemon trains, prepares the best submission and asks you before it
+submits. With no credentials, ask for a mock run instead.
+
+Limits: about 4 vCPUs, 16 GB RAM and 30 GB disk, no GPU, so it suits tabular competitions. The VM pauses when
+Claude is idle and is wiped after the session, so a run lasts as long as Claude's turn, and Claude pushes the
+report and research notes to a `runs/<slug>` branch at the end. It never commits competition data.
+
 ## Quick start
 
 Offline, with a synthetic competition (simulated submissions scored against a hidden answer key):
@@ -263,7 +298,7 @@ credentials mounted.
 - Submissions that are nearly identical to an earlier one (correlation ≥ 0.9995, or label agreement) are refused unless you pass `--force`.
 - Daily usage is counted per UTC day from both the local records and Kaggle's own list, so manual website
   submissions also count. Limit = min(Kaggle limit, optional `submission_budget`).
-- **Approval**: `submit approve` needs an interactive terminal (or the dashboard button), so automated agents cannot approve.
+- **Approval**: `submit approve` needs an interactive terminal (or the dashboard button), so automated agents cannot approve. In a Claude Code cloud session you approve in the chat instead (see "Cloud sessions").
 - **Autonomous mode** is per competition and opt-in:
   `rules set --automated-submissions allowed` then `autosubmit enable --max-daily 2 --i-authorize`.
   The daemon then submits only when a new best CV beats the best submitted CV, within that budget.

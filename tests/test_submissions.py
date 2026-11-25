@@ -107,3 +107,27 @@ def test_cli_approval_requires_a_human(make_comp, tracker, monkeypatch):
     code, payload = main.run(["submit", "approve", "--id", str(prepared["submission_id"]), "-c", ws.slug])
     assert code == 1 and "interactive terminal" in payload["error"]
     assert tracker.get_submission(prepared["submission_id"])["status"] == "pending_approval"
+
+
+def test_user_confirmed_flag_is_refused_outside_cloud_sessions(make_comp, tracker, monkeypatch):
+    import main
+    ws = make_comp("binary")
+    prepared = SubmissionManager(ws, tracker).prepare(_trained(ws, tracker))
+    monkeypatch.delenv("CLAUDE_CODE_REMOTE", raising=False)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False, raising=False)
+    code, payload = main.run(["submit", "approve", "--id", str(prepared["submission_id"]), "--user-confirmed",
+                              "-c", ws.slug])
+    assert code == 1 and "cloud session" in payload["error"]
+    assert tracker.get_submission(prepared["submission_id"])["status"] == "pending_approval"
+
+
+def test_research_agents_cannot_use_user_confirmed(make_comp, tracker, monkeypatch):
+    import main
+    ws = make_comp("binary")
+    prepared = SubmissionManager(ws, tracker).prepare(_trained(ws, tracker))
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    monkeypatch.setenv("KAGGLE_AGENT_ROLE", "agent")
+    code, payload = main.run(["submit", "approve", "--id", str(prepared["submission_id"]), "--user-confirmed",
+                              "-c", ws.slug])
+    assert code == 1 and "reserved for the human" in payload["error"]
+    assert tracker.get_submission(prepared["submission_id"])["status"] == "pending_approval"
