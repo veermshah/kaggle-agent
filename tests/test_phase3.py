@@ -103,6 +103,7 @@ def test_api_server_refuses_weak_token():
 
 def test_dashboard_renders(make_comp, tracker, monkeypatch):
     monkeypatch.setenv("KAGGLE_AGENT_DASHBOARD_REFRESH", "0")
+    pytest.importorskip("streamlit")  # not installed in cloud sessions (requirements-cloud.txt)
     from streamlit.testing.v1 import AppTest
     ws = make_comp("binary")
     out = service.queue_experiment(ws, tracker, {"model": "lgbm"}, "baseline")

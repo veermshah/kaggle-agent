@@ -61,7 +61,8 @@ Each round (about every 5 to 10 minutes; use `sleep 300` between checks, never a
    `analyze(train, test)` and run `python main.py analyze --name <name>`.
 4. Queue 1 to 3 experiments with a stated hypothesis each:
    `python main.py exp propose --spec '{"model":"lgbm","params":{...},"features":["count_encoding"]}' --hypothesis "..."`.
-   `python main.py exp suggest` lists the heuristic agent's ranked ideas.
+   `python main.py exp suggest` lists the heuristic agent's ranked ideas; `python main.py features list` lists
+   the built-in feature recipes (unknown names are refused).
 5. New feature ideas go in `workspaces/<slug>/custom_features/<name>.py` defining `transform(df) -> DataFrame`.
    Check them with `python main.py features test --name <name>` (leakage flags, one-fold score delta), then ask
    the user to approve (`features approve --name <name> --yes`, a gated command) and reference them as
