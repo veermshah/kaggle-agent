@@ -30,3 +30,6 @@ Thumbs.db
 .vscode/
 .idea/
 catboost_info/
+
+# Local/mock competition data
+data/
